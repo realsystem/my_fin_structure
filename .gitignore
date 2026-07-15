@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# State files from learn command
+.*_state.json
+
+# Credentials (never commit)
+*.json
+!pyproject.json
+
+# PDF statements (sensitive data)
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db
