@@ -2,6 +2,7 @@
 
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 import io
@@ -209,7 +210,11 @@ class PDFAnonymizer:
         box1: Tuple[float, float, float, float],
         box2: Tuple[float, float, float, float],
     ) -> bool:
-        """Check if two bboxes overlap."""
+        """Check if two bboxes overlap meaningfully (not just touching).
+
+        Require at least 20% of one box's height to overlap to be considered overlapping.
+        This prevents removing detections in vertically adjacent blocks.
+        """
         x0_1, y0_1, x1_1, y1_1 = box1
         x0_2, y0_2, x1_2, y1_2 = box2
 
@@ -219,7 +224,15 @@ class PDFAnonymizer:
         if y1_1 <= y0_2 or y1_2 <= y0_1:
             return False
 
-        return True
+        # Both boxes have some x and y overlap. Check if it's meaningful.
+        # Calculate overlap amount
+        y_overlap = min(y1_1, y1_2) - max(y0_1, y0_2)
+        h1 = y1_1 - y0_1
+        h2 = y1_2 - y0_2
+
+        # Consider it overlapping only if at least 20% of either box overlaps
+        min_height = min(h1, h2)
+        return y_overlap >= min_height * 0.2
 
     def _create_anonymized_pdf(
         self,
@@ -227,17 +240,25 @@ class PDFAnonymizer:
         output_path: Path,
         detections: list[Detection],
     ) -> None:
-        """Create anonymized PDF by replacing detected text."""
+        """Create anonymized PDF by replacing detected text.
+
+        Uses redactions to permanently remove original text from the PDF content stream,
+        then draws white boxes and inserts replacement text for visual consistency.
+        """
         with fitz.open(input_path) as doc:
+            # First pass: apply redactions to remove text from content stream
             for detection in detections:
                 page = doc[detection.page_num]
+                # Add redaction annotation (white fill, no text)
+                rect = fitz.Rect(detection.bbox)
+                page.add_redact_annot(rect, fill=(1, 1, 1), text="")
+                # Apply the redaction immediately to this page
+                page.apply_redactions()
 
-                # Find and replace the text in the PDF
-                # Note: This is a simplified approach; a full implementation
-                # might need to handle text location more precisely
-                self._replace_text_in_page(
-                    page, detection.bbox, detection.replacement
-                )
+            # Second pass: add visual replacements (white box + new text)
+            for detection in detections:
+                page = doc[detection.page_num]
+                self._replace_text_in_page(page, detection.bbox, detection.replacement)
 
             # Write output
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,21 +271,21 @@ class PDFAnonymizer:
         replacement: str,
     ) -> None:
         """Replace text in a specific location on a page."""
-        # Get the region and add a white rectangle with replacement text
         x0, y0, x1, y1 = bbox
 
-        # Draw white rectangle to cover original text
-        page.draw_rect(bbox, color=None, fill=(1, 1, 1), width=0)
+        # Draw white rectangle to cover original text (draw slightly larger to ensure full coverage)
+        margin = 1
+        cover_rect = (x0 - margin, y0 - margin, x1 + margin, y1 + margin)
+        page.draw_rect(cover_rect, color=None, fill=(1, 1, 1), width=0)
 
-        # Add replacement text
-        # Calculate font size to fit roughly in the same space
+        # Add replacement text, centered in the bbox
         text_width = x1 - x0
         text_height = y1 - y0
         font_size = max(8, min(12, text_height - 2))
 
-        # Insert replacement text
+        # Center text both horizontally and vertically
         page.insert_text(
-            (x0 + 2, y0 + text_height / 2),
+            (x0 + 2, y0 + (text_height + font_size) / 2 - 2),
             replacement,
             fontsize=font_size,
             color=(0, 0, 0),
