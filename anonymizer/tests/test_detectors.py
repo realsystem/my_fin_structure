@@ -53,6 +53,43 @@ class TestAmountDetector:
         detections = detector.detect([block])
         assert len(detections) == 0
 
+    def test_detects_labeled_payment(self):
+        """Detect 'Payment: $1000' format."""
+        detector = AmountDetector()
+        block = TextBlock(
+            text="Payment: $1,234.56",
+            bbox=(0, 0, 100, 20),
+            page_num=0,
+        )
+        detections = detector.detect([block])
+        assert len(detections) > 0
+        assert detections[0].detection_type == "amount"
+        assert detections[0].confidence == 0.95
+
+    def test_detects_labeled_new_balance(self):
+        """Detect 'New Balance: $5000' format."""
+        detector = AmountDetector()
+        block = TextBlock(
+            text="New Balance: $5,000.00",
+            bbox=(0, 0, 100, 20),
+            page_num=0,
+        )
+        detections = detector.detect([block])
+        assert len(detections) > 0
+        assert detections[0].detection_type == "amount"
+        assert detections[0].confidence == 0.95
+
+    def test_detects_labeled_balance(self):
+        """Detect 'Balance: $2500' format."""
+        detector = AmountDetector()
+        block = TextBlock(
+            text="Balance: $2,500.00",
+            bbox=(0, 0, 100, 20),
+            page_num=0,
+        )
+        detections = detector.detect([block])
+        assert len(detections) > 0
+
 
 class TestAccountNumberDetector:
     """Test account number detection."""

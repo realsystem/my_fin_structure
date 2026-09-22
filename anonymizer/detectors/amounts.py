@@ -15,6 +15,12 @@ class AmountDetector(Detector):
         r"[\(\$]?[\s]*(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?|\d+\.\d{2})[\s]*[\)]?"
     )
 
+    # Pattern for labeled amounts: "Payment: $1000" or "New Balance: $5000"
+    LABELED_AMOUNT_PATTERN = re.compile(
+        r"(payment|new\s+balance|balance|amount|total|due|charged|credited|debit|credit)\s*:?\s*([\(\$]?[\s]*\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?|\d+\.\d{2})[\s]*[\)]?",
+        re.IGNORECASE
+    )
+
     # Patterns that look like amounts but should be preserved
     PRESERVE_PATTERNS = [
         r"^Page\s+\d+\s+of\s+\d+$",  # Page numbers
@@ -47,14 +53,27 @@ class AmountDetector(Detector):
             if self._should_preserve(text):
                 continue
 
-            # Check if this looks like an amount (and extract the amount part)
-            amount_match = self.AMOUNT_PATTERN.search(text)
-            if amount_match and self._looks_like_amount(text):
+            # First check for labeled amounts (high confidence): "Payment: $1000"
+            labeled_match = self.LABELED_AMOUNT_PATTERN.search(text)
+            if labeled_match:
+                replacement = self._get_amount_replacement(text)
+                detections.append(
+                    self._log_detection(
+                        text=text,
+                        detection_type="amount",
+                        bbox=block.bbox,
+                        page_num=block.page_num,
+                        replacement=replacement,
+                        confidence=0.95,
+                        reason="Labeled monetary amount",
+                    )
+                )
+            # Then check for standalone amounts (lower confidence)
+            elif self.AMOUNT_PATTERN.search(text) and self._looks_like_amount(text):
                 # Check for context clues
                 context_score = self._check_context(text, text_blocks, block.page_num, block.bbox)
 
                 # Mark as amount if looks like amount OR found context clues
-                # Standalone amounts like "$1,234.56" should be detected
                 replacement = self._get_amount_replacement(text)
                 # Higher confidence if we found context, lower if just pattern match
                 confidence = (0.7 + (context_score * 0.3)) if context_score > 0 else 0.65
